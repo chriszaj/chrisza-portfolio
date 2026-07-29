@@ -1172,7 +1172,8 @@
     pages.forEach(p => pageIO.observe(p));
 
     function goToPage(i){
-      pages[i].scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+      // scroll the track horizontally only — never touches the page's vertical scroll position
+      track.scrollTo({ left: pages[i].offsetLeft, behavior: 'smooth' });
     }
 
     function startAutoSwipe(){
