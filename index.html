@@ -1143,18 +1143,27 @@
   }, { threshold: 0.12 });
   revealEls.forEach(el => io.observe(el));
 
-  // carousel: page-dot syncing + click-to-jump, works for both expertise and work carousels
+  // carousel: page-dot syncing + click-to-jump + auto-swipe, works for both expertise and work carousels
+  const AUTO_SWIPE_MS = 5000;   // standard 5s auto-advance
+  const RESUME_DELAY_MS = 6000; // pause this long after user interacts before auto-swipe resumes
+
   function initCarousel(root){
     const track = root.querySelector('.carousel-track');
     const dotsWrap = root.querySelector('.carousel-dots');
     if(!track || !dotsWrap) return;
     const pages = Array.from(track.children);
     const dots = Array.from(dotsWrap.children);
+    let currentIndex = 0;
+    let autoTimer = null;
+    let resumeTimer = null;
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const pageIO = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if(entry.isIntersecting){
           const idx = pages.indexOf(entry.target);
+          currentIndex = idx;
           dots.forEach(d => d.classList.remove('active'));
           if(dots[idx]) dots[idx].classList.add('active');
         }
@@ -1162,10 +1171,56 @@
     }, { root: track, threshold: 0.6 });
     pages.forEach(p => pageIO.observe(p));
 
+    function goToPage(i){
+      pages[i].scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+    }
+
+    function startAutoSwipe(){
+      if(prefersReducedMotion || pages.length <= 1) return;
+      stopAutoSwipe();
+      autoTimer = setInterval(() => {
+        const next = (currentIndex + 1) % pages.length;
+        goToPage(next);
+      }, AUTO_SWIPE_MS);
+    }
+
+    function stopAutoSwipe(){
+      if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+    }
+
+    function pauseThenResume(){
+      stopAutoSwipe();
+      if(resumeTimer) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(startAutoSwipe, RESUME_DELAY_MS);
+    }
+
     dots.forEach((dot, i) => {
       dot.addEventListener('click', () => {
-        pages[i].scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+        goToPage(i);
+        pauseThenResume();
       });
+    });
+
+    // any manual interaction pauses auto-swipe, then resumes after a delay
+    track.addEventListener('pointerdown', pauseThenResume, { passive: true });
+    track.addEventListener('touchstart', pauseThenResume, { passive: true });
+    track.addEventListener('wheel', pauseThenResume, { passive: true });
+
+    // don't auto-swipe while off-screen or hidden (e.g. desktop width, where .carousel-wrap is display:none)
+    const visibilityIO = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if(entry.isIntersecting && root.offsetParent !== null){
+          startAutoSwipe();
+        } else {
+          stopAutoSwipe();
+        }
+      });
+    }, { threshold: 0.2 });
+    visibilityIO.observe(root);
+
+    document.addEventListener('visibilitychange', () => {
+      if(document.hidden) stopAutoSwipe();
+      else if(root.offsetParent !== null) startAutoSwipe();
     });
   }
   document.querySelectorAll('.carousel-wrap').forEach(initCarousel);
